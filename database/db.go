@@ -1,7 +1,7 @@
 package database
 
 import (
-	"final-task-pbi-rakamin/app"
+	"final-task-pbi-rakamin/models"
 	"fmt"
 	"log"
 
@@ -10,79 +10,32 @@ import (
 )
 
 var (
-	DB *gorm.DB
-	// err      error
+	host     = "localhost"
+	user     = "postgres"
+	password = "mysecret"
+	port     = "5432"
+	dbname   = "final_task"
+	db       *gorm.DB
+	err      error
 )
 
 func StartDB() {
-	host := "localhost"
-	user := "postgres"
-	password := "mysecret"
-	port := "5432"
-	dbname := "final_task"
-
 	config := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable", host, user, password, dbname, port)
 	dsn := config
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	var dbConnection *gorm.DB // untuk menyimpan hasil dari 'gorm .Open'
+	dbConnection, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 
 	if err != nil {
 		log.Fatal("error connection to database :", err)
 	}
 
-	if err := db.AutoMigrate(&app.User{}); err != nil {
-		log.Fatalf("failed to migrate database: %v", err)
-	}
+	fmt.Println("sukses koneksi ke database")
+	dbConnection.Debug().AutoMigrate(models.User{}, models.Photo{})
 
-	DB = db
+	// Assign variabel global db
+	db = dbConnection
 }
 
-// var (
-// 	host     = "localhost"
-// 	user     = "postgres"
-// 	password = "mysecret"
-// 	port     = "5432"
-// 	dbname   = "final_task"
-// 	db       *gorm.DB
-// )
-
-// func StartDB() {
-// 	config := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable", host, user, password, dbname, port)
-// 	dsn := config
-// 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-
-// 	if err != nil {
-// 		log.Fatal("error connection to database :", err)
-// 	}
-
-// 	fmt.Println("sukses koneksi ke database")
-// 	db.Debug().AutoMigrate(app.User{}, app.Photo{})
-// }
-
-// func GetDB() *gorm.DB {
-// 	return db
-// }
-
-// 	fmt.Println("sukses koneksi ke database")
-// 	db.Debug().AutoMigrate(app.User{}, app.Photo{})
-// }
-
-// 	fmt.Println("sukses koneksi ke database")
-// 	db.Debug().AutoMigrate(app.User{}, app.Photo{})
-// }
-
-// DB = db
-
-// func DB() *gorm.DB {
-// 	host := "localhost"
-// 	user := "postgres"
-// 	password := "mysecret"
-// 	port := "5432"
-// 	dbname := "final_task"
-
-// 	connectionString := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable", host, user, password, dbname, port)
-// 	db, err := gorm.Open(postgres.Open(connectionString), &gorm.Config{})
-// 	if err != nil {
-// 		panic("error connection to database")
-// 	}
-// 	return db
-// }
+func GetDB() *gorm.DB {
+	return db
+}

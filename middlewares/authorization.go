@@ -1,8 +1,8 @@
 package middlewares
 
 import (
-	"final-task-pbi-rakamin/app"
 	"final-task-pbi-rakamin/database"
+	"final-task-pbi-rakamin/models"
 	"net/http"
 	"strconv"
 
@@ -12,7 +12,7 @@ import (
 
 func PhotoAuthorization() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		db := database.DB
+		db := database.GetDB()
 		photoId, err := strconv.Atoi(c.Param("photoId"))
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
@@ -24,7 +24,7 @@ func PhotoAuthorization() gin.HandlerFunc {
 
 		userData := c.MustGet("userData").(jwt.MapClaims)
 		userID := uint64(userData["id"].(float64))
-		Photo := app.Photo{}
+		Photo := models.Photo{}
 
 		err = db.Select("user_id").First(&Photo, uint64(photoId)).Error
 

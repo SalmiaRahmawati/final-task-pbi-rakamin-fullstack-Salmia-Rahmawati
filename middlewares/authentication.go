@@ -9,16 +9,9 @@ import (
 
 func Authentication() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tokenString := c.GetHeader("Authorization")
-		if tokenString == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"error":   "Unauthenticated",
-				"message": "Authorization header is missing",
-			})
-			return
-		}
+		verifyToken, err := helpers.VerifyToken(c)
+		_ = verifyToken
 
-		validateToken, err := helpers.ValidateToken(tokenString)
 		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"error":   "Unauthenticated",
@@ -26,7 +19,7 @@ func Authentication() gin.HandlerFunc {
 			})
 			return
 		}
-		c.Set("userData", validateToken)
+		c.Set("userData", verifyToken)
 		c.Next()
 	}
 }

@@ -1,288 +1,222 @@
 package controllers
 
 import (
-	"final-task-pbi-rakamin/app"
+	"final-task-pbi-rakamin/database"
 	"final-task-pbi-rakamin/helpers"
 	"final-task-pbi-rakamin/models"
+	"fmt"
+	"log"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
-
-type UserController struct {
-	userModel *models.UserModel
-}
-
-func NewUserController(userModel *models.UserModel) *UserController {
-	return &UserController{
-		userModel: userModel,
-	}
-}
 
 var (
 	appJSON = "application/json"
 )
 
-func (u *UserController) SignUp(c *gin.Context) {
-	// db := database.GetDB()
+func UserRegister(c *gin.Context) {
+	db := database.GetDB()
 	contentType := helpers.GetContentType(c)
-	// _, _ = db, contentType
-	userSignUp := app.UserSignUp{}
+	_, _ = db, contentType
+	User := models.User{}
 
 	if contentType == appJSON {
-		c.ShouldBindJSON(&userSignUp)
+		if err := c.ShouldBindJSON(&User); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid JSON",
+				"message": err.Error(),
+			})
+			return
+		}
 	} else {
-		c.ShouldBind(&userSignUp)
+		if err := c.ShouldBind(&User); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid form data",
+				"message": err.Error(),
+			})
+			return
+		}
 	}
 
-	user, err := u.userModel.CreateUser(userSignUp)
+	err := db.Debug().Create(&User).Error
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	createdUser := app.UserSignUpOutput{
-		GormApp:  user.GormApp,
-		Username: userSignUp.Username,
-		Email:    userSignUp.Email,
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "User created successfully", "user": createdUser})
-}
-
-func (u *UserController) Login(c *gin.Context) {
-	contentType := helpers.GetContentType(c)
-	userLogin := app.UserLogin{}
-
-	if contentType == appJSON {
-		c.ShouldBindJSON(&userLogin)
-	} else {
-		c.ShouldBind(&userLogin)
-	}
-
-	user, err := u.userModel.GetUsersByEmail(userLogin.Email)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Invalid email or password"})
-		return
-	}
-
-	pass := helpers.CheckPasswordHash(userLogin.Password, user.Password)
-	if !pass {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid email or password",
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   "Failed to create user",
+			"message": err.Error(),
 		})
 		return
 	}
 
-	token, err := helpers.GenerateToken(user)
+	c.JSON(http.StatusCreated, gin.H{
+		"id":         User.ID,
+		"username":   User.Username,
+		"email":      User.Email,
+		"created_at": User.CreatedAt,
+		"updated_at": User.UpdatedAt,
+	})
+}
+
+func UserLogin(c *gin.Context) {
+	db := database.GetDB()
+	contentType := helpers.GetContentType(c)
+	_, _ = db, contentType
+	loginUser := models.User{}
+	password := ""
+
+	if contentType == appJSON {
+		if err := c.ShouldBindJSON(&loginUser); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid JSON",
+				"message": err.Error(),
+			})
+			return
+		}
+	} else {
+		if err := c.ShouldBind(&loginUser); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid form data",
+				"message": err.Error(),
+			})
+			return
+		}
+	}
+
+	password = loginUser.Password
+
+	userFromDB := models.User{}
+	err := db.Debug().Where("email = ?", loginUser.Email).Take(&userFromDB).Error
+
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		log.Println("Error finding user with email:", loginUser.Email, "Error:", err)
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "invalid email/password",
+		})
 		return
 	}
+
+	comparePass := helpers.ComparePass([]byte(userFromDB.Password), []byte(password))
+
+	if !comparePass {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":   "Unauthorized",
+			"message": "invalid email/password",
+		})
+		return
+	}
+
+	token := helpers.GenerateToken(userFromDB.ID, userFromDB.Email)
 
 	c.JSON(http.StatusOK, gin.H{
 		"token": token,
 	})
 }
 
-func (u *UserController) GetUsers(c *gin.Context) {
-	users, err := u.userModel.GetUsers()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, users)
-}
+func GetUser(c *gin.Context) {
+	var (
+		users []models.User
+	)
 
-func (u *UserController) GetUsersById(c *gin.Context) {
-	idParam := c.Param("id")
-	id, err := strconv.Atoi(idParam)
-	if id == 0 || err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Invalid required param",
-		})
-		return
-	}
+	db := database.GetDB()
+	err := db.Find(&users).Error
 
-	user := app.User{}
-	users, err := u.userModel.GetUsersByID(user.ID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, users)
-}
-
-func (u *UserController) UpdateUser(c *gin.Context) {
-	idParam := c.Param("id")
-	id, err := strconv.ParseUint(idParam, 10, 64)
-	if err != nil {
+		fmt.Println(err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid required param",
+			"error": err.Error(),
 		})
-		return
-	}
-
-	contentType := helpers.GetContentType(c)
-	user := app.User{}
-	if contentType == appJSON {
-		c.ShouldBindJSON(&user)
-	} else {
-		c.ShouldBind(&user)
-	}
-
-	updatedUser, err := u.userModel.UpdateUser(id, &user)
-	if err != nil {
-		if err.Error() == "user not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "User updated successfully",
-		"user":    updatedUser,
+		"data": users,
 	})
 }
 
-func (u *UserController) DeleteUser(c *gin.Context) {
-	idParam := c.Param("id")
-	id, err := strconv.ParseUint(idParam, 10, 64)
+func UserUpdate(c *gin.Context) {
+	db := database.GetDB()
+	contentType := helpers.GetContentType(c)
+	User := models.User{}
+
+	id := c.Param("userId")
+
+	if contentType == appJSON {
+		if err := c.ShouldBindJSON(&User); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid JSON",
+				"message": err.Error(),
+			})
+			return
+		}
+	} else {
+		if err := c.ShouldBind(&User); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":   "Invalid form data",
+				"message": err.Error(),
+			})
+			return
+		}
+	}
+
+	// Cari user berdasarkan id
+	userID := models.User{}
+	err := db.First(&userID, id).Error
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid required param",
+		c.JSON(http.StatusNotFound, gin.H{ // apabila user tidak ditemukan
+			"error":   "User not found",
+			"message": err.Error(),
 		})
 		return
 	}
 
-	contentType := helpers.GetContentType(c)
-	user := app.User{}
-	if contentType == appJSON {
-		c.ShouldBindJSON(&user)
-	} else {
-		c.ShouldBind(&user)
+	// Update data user
+	err = db.Model(&userID).Updates(User).Error
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{ // untuk kegagalan update
+			"error":   "Failed to update user",
+			"message": err.Error(),
+		})
+		return
 	}
 
-	deleteUser, err := u.userModel.DeleteUser(id, &user)
+	c.JSON(http.StatusCreated, gin.H{
+		"id":         User.ID,
+		"email":      User.Email,
+		"username":   User.Username,
+		"created_at": User.CreatedAt,
+		"updated_at": User.UpdatedAt,
+	})
+}
+
+func UserDelete(c *gin.Context) {
+	db := database.GetDB()
+	contentType := helpers.GetContentType(c)
+	_, _ = db, contentType
+	User := models.User{}
+
+	id := c.Param("userId")
+
+	err := db.First(&User, id).Error
 	if err != nil {
-		if err.Error() == "user not found" {
-			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		}
+		fmt.Println(err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err,
+		})
+		return
+	}
+
+	err = db.Delete(&User).Error
+	if err != nil {
+		fmt.Println(err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err,
+		})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": "User successfully deleted",
-		"user":    deleteUser,
+		"message": "Your account has been successfully deleted",
 	})
 }
-
-// func SignUp(c *gin.Context) {
-// 	var userSignUp app.UserSignUp
-// 	if err := c.ShouldBindJSON(&userSignUp); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	hashedPassword, err := helpers.HashPass(userSignUp.Password)
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	user := &app.User{
-// 		Username: userSignUp.Username,
-// 		Email:    userSignUp.Email,
-// 		Password: hashedPassword,
-// 	}
-
-// 	userModel := models.NewUserModel(database.DB)
-// 	createdUser, err := userModel.CreateUser(user)
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	c.JSON(http.StatusOK, gin.H{"message": "User created successfully", "user": createdUser})
-// }
-
-// func Login(c *gin.Context) {
-// 	var user app.User
-// 	if err := c.ShouldBindJSON(&user); err != nil {
-// 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	dbUser, err := models.GetUsersByEmail(user.Email)
-// 	if err != nil {
-// 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
-// 		return
-// 	}
-
-// 	if !helpers.CheckPasswordHash(user.Password, dbUser.Password) {
-// 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
-// 		return
-// 	}
-
-// 	token, err := helpers.GenerateJWT(dbUser)
-// 	if err != nil {
-// 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 		return
-// 	}
-
-// 	c.JSON(http.StatusOK, gin.H{"token": token})
-// }
-
-// type UserController struct {
-// 	userModel models.UserModel
-// }
-
-// func NewUserController(userModel models.UserModel) *UserController {
-// 	return &UserController{
-// 		userModel: userModel,
-// 	}
-// }
-
-// userModel := models.NewUserModel(db * gorm.DB)
-// createdUser, err := userModel.CreateUser(user)
-// if err != nil {
-// 	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 	return
-// }
-// ctx.JSON(http.StatusOK, gin.H{"message": "User created successfully", "user": createdUser})
-
-// hashedPassword, err := helpers.HashPass(userSignUp.Password)
-// if err != nil {
-// 	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-// 	return
-// }
-
-// func (uc *UserController) GetUsersByID(ctx *gin.Context) {
-// 	id, err := strconv.Atoi(ctx.Param("id"))
-// 	if err != nil {
-// 		ctx.JSON(http.StatusBadRequest, gin.H{
-// 			"status":  "error",
-// 			"message": "Invalid user ID",
-// 		})
-// 		return
-// 	}
-
-// 	user, err := uc.userModel.GetUsersByID(uint64(id))
-// 	if err != nil {
-// 		ctx.JSON(http.StatusNotFound, gin.H{
-// 			"status":  "error",
-// 			"message": "User not found",
-// 		})
-// 		return
-// 	}
-
-// 	ctx.JSON(http.StatusOK, gin.H{
-// 		"status": "OK",
-// 		"data":   user,
-// 	})
-// }

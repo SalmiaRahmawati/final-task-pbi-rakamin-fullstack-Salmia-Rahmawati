@@ -1,92 +1,42 @@
 package models
 
 import (
-	"errors"
-	"final-task-pbi-rakamin/app"
+	"final-task-pbi-rakamin/helpers"
 
+	"github.com/asaskevich/govalidator"
 	"gorm.io/gorm"
 )
 
-type UserModel struct {
-	db *gorm.DB
+type User struct {
+	GormModel
+	Username string  `gorm:"not null" json:"username" valid:"required~Username is required"`
+	Email    string  `gorm:"unique" json:"email" valid:"required~Email is required"`
+	Password string  `gorm:"not null" json:"password" valid:"required~Password is required,minstringlength(6)~Password has to have minimum length of 6 characters"`
+	Photos   []Photo `gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL;" json:"photos"`
 }
 
-func NewUserModel(db *gorm.DB) *UserModel {
-	return &UserModel{
-		db: db,
+func (u *User) BeforeCreate(tx *gorm.DB) (err error) {
+	_, errCreate := govalidator.ValidateStruct(u)
+
+	if errCreate != nil {
+		err = errCreate
+		return
 	}
+
+	u.Password = helpers.HashPass(u.Password)
+	err = nil
+	return
 }
 
-func (m *UserModel) CreateUser(userSignUp app.UserSignUp) (app.User, error) {
-	user := app.User{
-		Username: userSignUp.Username,
-		Email:    userSignUp.Email,
-		Password: userSignUp.Password,
-	}
-	err := m.db.Create(&user).Error
-	return user, err
-}
+func (u *User) BeforeUpdate(tx *gorm.DB) (err error) {
+	_, errCreate := govalidator.ValidateStruct(u)
 
-func (m *UserModel) GetUsersByEmail(email string) (app.User, error) {
-	var user app.User
-	err := m.db.Where("email = ?", email).First(&user).Error
-	return user, err
-}
-
-func (m *UserModel) GetUsers() ([]app.User, error) {
-	var users []app.User
-
-	if err := m.db.Find(&users).Error; err != nil {
-		return nil, err
-	}
-	return users, nil
-}
-
-func (m *UserModel) GetUsersByID(id uint64) (*app.User, error) {
-	var user app.User
-	if err := m.db.Where("id = ?", id).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
-		}
-		return nil, err
-	}
-	return &user, nil
-}
-
-func (m *UserModel) UpdateUser(id uint64, userUpdate *app.User) (*app.User, error) {
-	var user app.User
-	if err := m.db.Where("id = ?", id).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
-		}
-		return nil, err
+	if errCreate != nil {
+		err = errCreate
+		return
 	}
 
-	user.Username = userUpdate.Username
-	user.Email = userUpdate.Email
-	if userUpdate.Password != "" {
-		user.Password = userUpdate.Password
-	}
-
-	if err := m.db.Save(&user).Error; err != nil {
-		return nil, err
-	}
-
-	return &user, nil
-}
-
-func (m *UserModel) DeleteUser(id uint64, userDelete *app.User) (*app.User, error) {
-	var user app.User
-	if err := m.db.Where("id = ?", id).First(&user).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("user not found")
-		}
-		return nil, err
-	}
-
-	if err := m.db.Delete(&user).Error; err != nil {
-		return nil, err
-	}
-
-	return &user, nil
+	u.Password = helpers.HashPass(u.Password)
+	err = nil
+	return
 }
